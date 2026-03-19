@@ -283,6 +283,68 @@ function testDungeonPartyAuthoritySuppressesDuplicateHostileSpawns(): void {
     assert.equal(follower.entities.has(3301), false);
 }
 
+function testDungeonPartyAuthoritySuppressesDuplicateHostileSpawnsAcrossUnsyncedRooms(): void {
+    const owner = createFakeClient('Alpha');
+    const follower = createFakeClient('Beta');
+
+    owner.currentLevel = 'TutorialDungeon';
+    follower.currentLevel = 'TutorialDungeon';
+    owner.currentRoomId = 4;
+    follower.currentRoomId = 0;
+
+    const canonical = {
+        id: 2302,
+        name: 'IntroGoblin',
+        isPlayer: false,
+        x: 120,
+        y: 220,
+        v: 0,
+        team: 2,
+        entState: 0,
+        clientSpawned: true,
+        ownerToken: owner.token,
+        ownerPartyId: 98,
+        roomId: owner.currentRoomId
+    };
+
+    GlobalState.levelEntities.set('TutorialDungeon', new Map([[canonical.id, canonical]]));
+    GlobalState.sessionsByToken.set(owner.token, owner as never);
+    GlobalState.sessionsByToken.set(follower.token, follower as never);
+    GlobalState.partyByMember.set('alpha', 98);
+    GlobalState.partyByMember.set('beta', 98);
+
+    const duplicate = {
+        id: 3302,
+        name: canonical.name,
+        isPlayer: false,
+        x: 123,
+        y: 218,
+        v: 0,
+        team: canonical.team,
+        entState: canonical.entState,
+        clientSpawned: true,
+        ownerToken: follower.token,
+        ownerPartyId: 98,
+        roomId: follower.currentRoomId
+    };
+
+    const suppressed = (EntityHandler as any).suppressDuplicateSharedClientSpawn(
+        follower as never,
+        'TutorialDungeon',
+        GlobalState.levelEntities.get('TutorialDungeon'),
+        duplicate
+    );
+
+    const levelMap = GlobalState.levelEntities.get('TutorialDungeon');
+    assert.equal(suppressed, true, 'follower hostile spawn should still be suppressed while the joiner room state is unsynced');
+    assert.equal(levelMap?.size, 1, 'cross-room dungeon hostile should still collapse to the existing shared entity');
+    assert.deepEqual(follower.sentPackets.map((packet) => packet.id), [0x0D, 0x0F]);
+    assert.equal(parseDestroyEntityId(follower.sentPackets[0]!.payload), 3302);
+    assert.equal(follower.knownEntityIds.has(canonical.id), true);
+    assert.equal(follower.knownEntityIds.has(3302), false);
+    assert.equal(follower.entities.has(3302), false);
+}
+
 function testOutdoorPartyAuthoritySuppressesDuplicateNpcSpawns(): void {
     const owner = createFakeClient('Alpha');
     const follower = createFakeClient('Beta');
@@ -770,6 +832,11 @@ function main(): void {
         GlobalState.sessionsByToken.clear();
         GlobalState.partyByMember.clear();
         testDungeonPartyAuthoritySuppressesDuplicateHostileSpawns();
+
+        GlobalState.levelEntities.clear();
+        GlobalState.sessionsByToken.clear();
+        GlobalState.partyByMember.clear();
+        testDungeonPartyAuthoritySuppressesDuplicateHostileSpawnsAcrossUnsyncedRooms();
 
         GlobalState.levelEntities.clear();
         GlobalState.sessionsByToken.clear();

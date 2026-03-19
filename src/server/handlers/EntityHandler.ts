@@ -105,13 +105,14 @@ export class EntityHandler {
         return storedPartyId > 0 ? storedPartyId : 0;
     }
 
-    private static findSharedClientSpawnCanonicalMatch(
+    private static findBestSharedClientSpawnCanonicalMatch(
         levelName: string,
         levelMap: Map<number, any>,
         partyId: number,
         roomId: number,
         entity: any,
-        excludedOwnerToken: number
+        excludedOwnerToken: number,
+        requireSharedRoom: boolean
     ): any | null {
         const targetName = EntityHandler.normalizeIdentityName(entity?.name);
         const targetTeam = Number(entity?.team ?? 0);
@@ -130,7 +131,7 @@ export class EntityHandler {
                     continue;
                 }
             }
-            if (!sharesRoomIds(roomId, Number(candidate?.roomId ?? -1))) {
+            if (requireSharedRoom && !sharesRoomIds(roomId, Number(candidate?.roomId ?? -1))) {
                 continue;
             }
             if (EntityHandler.normalizeIdentityName(candidate?.name) !== targetName) {
@@ -150,6 +151,44 @@ export class EntityHandler {
         }
 
         return bestMatch;
+    }
+
+    private static findSharedClientSpawnCanonicalMatch(
+        levelName: string,
+        levelMap: Map<number, any>,
+        partyId: number,
+        roomId: number,
+        entity: any,
+        excludedOwnerToken: number
+    ): any | null {
+        const exactRoomMatch = EntityHandler.findBestSharedClientSpawnCanonicalMatch(
+            levelName,
+            levelMap,
+            partyId,
+            roomId,
+            entity,
+            excludedOwnerToken,
+            true
+        );
+        if (exactRoomMatch) {
+            return exactRoomMatch;
+        }
+
+        const targetTeam = Number(entity?.team ?? 0);
+        if (partyId <= 0 || targetTeam !== 2 || !LevelConfig.isDungeonLevel(levelName)) {
+            return null;
+        }
+
+        // Joiners can be in the correct dungeon instance before their room state syncs.
+        return EntityHandler.findBestSharedClientSpawnCanonicalMatch(
+            levelName,
+            levelMap,
+            partyId,
+            roomId,
+            entity,
+            excludedOwnerToken,
+            false
+        );
     }
 
     private static suppressDuplicateSharedClientSpawn(
