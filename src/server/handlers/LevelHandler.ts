@@ -556,6 +556,11 @@ export class LevelHandler {
     private static readonly KEEP_TUTORIAL_BOSS_NAME = 'Ranik, The Geomancer';
     private static readonly KEEP_TUTORIAL_FIRST_PARROT_X = 7271;
     private static readonly KEEP_TUTORIAL_SECOND_PARROT_X = 17981;
+    private static readonly TUTORIAL_DUNGEON_INTRO_PARROT_ID = 384606;
+    private static readonly TUTORIAL_DUNGEON_ROOM_FIVE_PARROT_ID = 712286;
+    private static readonly TUTORIAL_DUNGEON_GOBLIN_SCENE_ROOM_ID = 5;
+    private static readonly TUTORIAL_DUNGEON_INTRO_LINE =
+        'Squawk! Goblins! Goblins everywhere! Help Pecky!';
 
     static resetCraftTownTutorialInstance(): void {
         const levelName = 'CraftTownTutorial';
@@ -669,6 +674,24 @@ export class LevelHandler {
         }
     }
 
+    private static maybeTriggerTutorialDungeonGoblinScene(client: Client, previousRoomId: number, roomId: number): void {
+        if (
+            client.currentLevel !== 'TutorialDungeon' ||
+            previousRoomId === roomId ||
+            roomId !== LevelHandler.TUTORIAL_DUNGEON_GOBLIN_SCENE_ROOM_ID ||
+            !LevelHandler.hasRoomEventStarted(client, 4)
+        ) {
+            return;
+        }
+
+        LevelHandler.sendRoomThought(
+            client.currentLevel,
+            LevelHandler.TUTORIAL_DUNGEON_ROOM_FIVE_PARROT_ID,
+            LevelHandler.TUTORIAL_DUNGEON_INTRO_LINE,
+            client.levelInstanceId
+        );
+    }
+
     private static sendRoomCutSceneStart(
         levelName: string,
         roomId: number,
@@ -779,12 +802,16 @@ export class LevelHandler {
         ).entityId;
         const parrotId = LevelHandler.findCraftTownTutorialParrotId(client, playerX);
 
+        if (parrotId !== null) {
+            LevelHandler.teleportParrot(client, parrotId, playerX, playerY - 100);
+        }
+
         let elapsedUnits = 0;
         const introSteps: Array<{ delayUnits: number; entityId: number | null; text: string }> = [
+            { delayUnits: 0, entityId: parrotId, text: '<Goto Red 1> Look out!' },
             { delayUnits: 5, entityId: oldManId, text: "Thank the stars you're here!" },
             { delayUnits: 14, entityId: oldManId, text: 'The goblins have ruined the keep.' },
             { delayUnits: 14, entityId: oldManId, text: 'I was the caretaker here...' },
-            { delayUnits: 6, entityId: parrotId, text: '<Goto Red 1> Look out!' },
             { delayUnits: 4, entityId: bossId, text: '<Goto Red 2> Stop the human!' },
             { delayUnits: 10, entityId: bossId, text: "Don't let him|her take our home!" }
         ];
@@ -1322,28 +1349,47 @@ export class LevelHandler {
         const playerX = Number(player?.x ?? newX);
         const playerY = Number(player?.y ?? 0);
 
-        if (state.phase < 1 && newX >= 8400) {
+        if (state.phase < 1 && newX >= 8650) {
             const parrotId = LevelHandler.findCraftTownTutorialParrotId(
                 client,
                 LevelHandler.KEEP_TUTORIAL_FIRST_PARROT_X
             );
             if (parrotId !== null) {
-                LevelHandler.teleportParrotAndStartSkit(client, parrotId, playerX, playerY);
+                LevelHandler.teleportParrotAndStartSkit(client, parrotId, newX, playerY - 100);
             }
             state.phase = 1;
             return;
         }
 
-        if (state.phase < 2 && newX >= 19000) {
+        if (state.phase < 2 && newX >= 19400) {
             const parrotId = LevelHandler.findCraftTownTutorialParrotId(
                 client,
                 LevelHandler.KEEP_TUTORIAL_SECOND_PARROT_X
             );
             if (parrotId !== null) {
-                LevelHandler.teleportParrotAndStartSkit(client, parrotId, playerX, playerY);
+                LevelHandler.teleportParrotAndStartSkit(client, parrotId, newX, playerY - 100);
             }
             state.phase = 2;
             return;
+        }
+
+        // --- Follow Logic ---
+        if (state.phase >= 1 && state.phase <= 2) {
+            const anchorX = (state.phase === 1) 
+                ? LevelHandler.KEEP_TUTORIAL_FIRST_PARROT_X 
+                : LevelHandler.KEEP_TUTORIAL_SECOND_PARROT_X;
+                
+            const parrotId = LevelHandler.findCraftTownTutorialParrotId(client, anchorX);
+            if (parrotId !== null) {
+                const parrotEnt = client.entities.get(parrotId);
+                if (parrotEnt) {
+                    const dist = Math.abs(parrotEnt.x - newX);
+                    // If player is more than 600px away, teleport parrot to follow
+                    if (dist > 600) {
+                        LevelHandler.teleportParrot(client, parrotId, newX, playerY - 100);
+                    }
+                }
+            }
         }
 
         if (state.phase >= 3) {
@@ -1367,13 +1413,14 @@ export class LevelHandler {
         }
     }
 
-    private static teleportParrotAndStartSkit(client: Client, parrotId: number, x: number, y: number): void {
+    private static teleportParrot(client: Client, parrotId: number, x: number, y: number): void {
         const parrotEnt = client.entities.get(parrotId);
         if (parrotEnt) {
-            // 1. Destroy on client to avoid duplicate entity crash
-            EntityHandler.broadcastDestroyEntity(client.currentLevel, parrotId, null, client.levelInstanceId);
-            
-            // 2. Update server-side position
+            const dx = Math.round(x - parrotEnt.x);
+            const dy = Math.round(y - parrotEnt.y);
+
+            // 1. Update server-side position BEFORE ensuring it's known
+            // This ensures the spawn packet (if sent) has the right coords.
             parrotEnt.x = x;
             parrotEnt.y = y;
             
@@ -1384,13 +1431,34 @@ export class LevelHandler {
                 globalParrot.y = y;
             }
 
-            // 3. Respawn for the client at the new position
-            // (broadcastDestroyEntity already cleared it from client.knownEntityIds)
-            EntityHandler.sendEntity(client, parrotEnt);
+            // 2. Ensure client knows it. If not known, this sends a Spawn (0x0F).
+            const wasKnown = client.knownEntityIds.has(parrotId);
+            EntityHandler.ensureEntityKnown(client, client.currentLevel, parrotId);
+
+            // 3. If it WAS already known, send an incremental move (0x07) to the client
+            // This avoids Error #2015: Invalid BitmapData from Destroy+Spawn cycles.
+            if (wasKnown && (dx !== 0 || dy !== 0)) {
+                EntityHandler.sendNpcMove(client, parrotId, dx, dy, parrotEnt.entState ?? 0, parrotEnt.facingLeft ?? false);
+            }
         }
+    }
+
+    private static teleportParrotAndStartSkit(client: Client, parrotId: number, x: number, y: number): void {
+        LevelHandler.teleportParrot(client, parrotId, x, y);
         
         // 4. Start skit
         LevelHandler.sendStartSkit(client, parrotId, 0, LevelHandler.FIRST_KEEP_MISSION_ID);
+    }
+
+    private static snapCraftTownTutorialParrotToPlayer(client: Client): number | null {
+        const player = client.entities.get(client.clientEntID);
+        const playerX = Number(player?.x ?? client.character?.CurrentLevel?.x ?? 0);
+        const playerY = Number(player?.y ?? client.character?.CurrentLevel?.y ?? 0);
+        const parrotId = LevelHandler.findCraftTownTutorialParrotId(client, playerX);
+        if (parrotId !== null) {
+            LevelHandler.teleportParrot(client, parrotId, playerX, playerY - 100);
+        }
+        return parrotId;
     }
 
     private static maybeTriggerCraftTownTutorialBossIntro(client: Client): void {
@@ -1407,6 +1475,8 @@ export class LevelHandler {
         state.phase = 3;
         state.bossIntroForced = true;
         state.forcedLastGuyId = lastGuyId;
+
+        LevelHandler.snapCraftTownTutorialParrotToPlayer(client);
 
         LevelHandler.killCraftTownTutorialLastGuy(client, lastGuyId);
 
@@ -1725,7 +1795,9 @@ export class LevelHandler {
 
     private static cacheRoomId(client: Client, roomId: number): void {
         if (Number.isFinite(roomId) && roomId >= 0) {
+            const previousRoomId = client.currentRoomId;
             client.currentRoomId = roomId;
+            LevelHandler.maybeTriggerTutorialDungeonGoblinScene(client, previousRoomId, roomId);
         }
     }
 
@@ -2008,6 +2080,15 @@ export class LevelHandler {
             if (!LevelHandler.hasRoomEventStarted(client, roomId)) {
                 LevelHandler.sendRoomEventStart(client, roomId, true);
             }
+        }
+
+        if (client.currentLevel === 'TutorialDungeon') {
+            LevelHandler.sendRoomThought(
+                client.currentLevel,
+                LevelHandler.TUTORIAL_DUNGEON_INTRO_PARROT_ID,
+                LevelHandler.TUTORIAL_DUNGEON_INTRO_LINE,
+                client.levelInstanceId
+            );
         }
     }
 

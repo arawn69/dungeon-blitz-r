@@ -582,6 +582,22 @@ export class EntityHandler {
         client.sendBitBuffer(0x07, bb);
     }
 
+    static sendNpcMove(client: Client, entityId: number, dx: number, dy: number, state: number = 0, facingLeft: boolean = false): void {
+        const bb = new BitBuffer(false);
+        bb.writeMethod4(entityId);
+        bb.writeMethod45(dx);
+        bb.writeMethod45(dy);
+        bb.writeMethod45(0); // deltaV
+        bb.writeMethod6(state, 2);
+        bb.writeMethod15(facingLeft);
+        bb.writeMethod15(false); // running
+        bb.writeMethod15(false); // jumping
+        bb.writeMethod15(false); // dropping
+        bb.writeMethod15(false); // backpedal
+        bb.writeMethod15(false); // airborne
+        client.sendBitBuffer(0x07, bb);
+    }
+
     private static sendSetUntargetable(client: Client, entityId: number, untargetable: boolean): void {
         const bb = new BitBuffer(false);
         bb.writeMethod4(entityId);

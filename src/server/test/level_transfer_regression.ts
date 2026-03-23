@@ -469,6 +469,32 @@ function testPrimeTutorialRoomEventsSkipsSyncedProgress(): void {
     assert.deepEqual(client.sentPackets.map((packet: { id: number }) => packet.id), [0xA5, 0xA5, 0xA5]);
 }
 
+function testPrimeTutorialRoomEventsSeedsTutorialDungeonIntroThought(): void {
+    const client = createClient();
+    client.currentLevel = 'TutorialDungeon';
+
+    LevelHandler.primeTutorialRoomEvents(client as never);
+
+    assert.equal(client.startedRoomEvents.has('TutorialDungeon:0'), true);
+    assert.equal(client.startedRoomEvents.has('TutorialDungeon:1'), true);
+    assert.deepEqual(
+        client.sentPackets.map((packet: { id: number }) => packet.id),
+        [0xA5, 0xA5, 0x76]
+    );
+}
+
+function testTutorialDungeonGoblinSceneStartsOnRoomFiveEntry(): void {
+    const client = createClient();
+    client.currentLevel = 'TutorialDungeon';
+    client.startedRoomEvents.add('TutorialDungeon:4');
+
+    (LevelHandler as any).cacheRoomId(client, 5);
+
+    assert.equal(client.currentRoomId, 5);
+    assert.equal(client.startedRoomEvents.has('TutorialDungeon:5'), false);
+    assert.deepEqual(client.sentPackets.map((packet: { id: number }) => packet.id), [0x76]);
+}
+
 function testDisconnectDuringDoorTransferPreservesRecoveryState(): void {
     const client = new Client(
         new net.Socket(),
@@ -714,6 +740,10 @@ function main(): void {
         testRestoreTransferredRoomProgressReplaysRoomEvents();
 
         testPrimeTutorialRoomEventsSkipsSyncedProgress();
+
+        testPrimeTutorialRoomEventsSeedsTutorialDungeonIntroThought();
+
+        testTutorialDungeonGoblinSceneStartsOnRoomFiveEntry();
     } finally {
         GlobalState.sessionsByToken = sessionsByToken;
         GlobalState.sessionsByUserId = sessionsByUserId;
