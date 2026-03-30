@@ -243,6 +243,29 @@ function testStorePendingTransferTokenKeepsTokenCharInSyncAndRequestsExtendedSta
     );
 }
 
+function testStorePendingTransferTokenRequestsExtendedStateForCraftTown(): void {
+    const character = createCharacter('Hero');
+
+    (LevelHandler as any).storePendingTransferToken(
+        50003,
+        character,
+        41,
+        'CraftTown',
+        'NewbieRoad',
+        1273,
+        1441,
+        true,
+        true,
+        null
+    );
+
+    assert.equal(
+        GlobalState.pendingExtended.get(50003),
+        true,
+        'CraftTown transfers should request the extended player-data payload so home gear displays repopulate'
+    );
+}
+
 function testBuildTransferSyncStatePrefersPartyAnchorInDungeon(): void {
     const follower = createClient();
     follower.character = createCharacter('Follower');
@@ -796,6 +819,12 @@ function main(): void {
         GlobalState.levelEntities.clear();
 
         testStorePendingTransferTokenKeepsTokenCharInSyncAndRequestsExtendedState();
+
+        GlobalState.pendingWorld.clear();
+        GlobalState.pendingExtended.clear();
+        GlobalState.tokenChar.clear();
+
+        testStorePendingTransferTokenRequestsExtendedStateForCraftTown();
 
         GlobalState.pendingWorld.clear();
         GlobalState.pendingExtended.clear();

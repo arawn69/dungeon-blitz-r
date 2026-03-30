@@ -53,6 +53,7 @@ router.register(0x16, CharacterHandler.handleCharacterSelect); // Select Charact
 router.register(0x17, CharacterHandler.handleLoginCharacterCreate); // Create Character
 router.register(0x19, CharacterHandler.handlePaperDollRequest); // Paper Doll Request
 router.register(0x1f, CharacterHandler.handleGameServerLogin); // Game Server Login
+router.register(0x8E, CharacterHandler.handleHomeLookChange); // Home Look Change
 
 // Missing Packets
 router.register(0x8, EntityHandler.handleEntityFullUpdate); // Entity Full Update

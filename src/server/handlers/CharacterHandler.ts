@@ -30,6 +30,19 @@ import {
 const db = new JsonAdapter();
 
 export class CharacterHandler {
+    private static async saveCharacterSnapshot(client: Client): Promise<void> {
+        if (!client.character) {
+            return;
+        }
+
+        if (!client.userId) {
+            client.characters = CharacterHandler.upsertCharacterList(client.characters, client.character);
+            return;
+        }
+
+        client.characters = await db.saveCharacterSnapshot(client.userId, client.character);
+    }
+
     private static initializeFreshCharacterProgress(character: Character): void {
         const newbieSpawn = LevelConfig.getSpawn("NewbieRoad");
 
@@ -234,6 +247,78 @@ export class CharacterHandler {
         return bb;
     }
 
+    private static buildLookUpdatePacket(entityId: number, character: Character): BitBuffer {
+        const bb = new BitBuffer(false);
+
+        bb.writeMethod4(Number(entityId || 0));
+        bb.writeMethod13(String(character.headSet ?? ''));
+        bb.writeMethod13(String(character.hairSet ?? ''));
+        bb.writeMethod13(String(character.mouthSet ?? ''));
+        bb.writeMethod13(String(character.faceSet ?? ''));
+        bb.writeMethod13(String(character.gender ?? ''));
+        bb.writeMethod6(Number(character.hairColor ?? 0), 24);
+        bb.writeMethod6(Number(character.skinColor ?? 0), 24);
+
+        return bb;
+    }
+
+    private static syncCurrentPlayerLookEntity(client: Client): void {
+        const entityId = Number(client.clientEntID || 0);
+        if (!client.character || entityId <= 0) {
+            return;
+        }
+
+        const character = client.character;
+        const applyLookFields = (entity: Record<string, unknown> | undefined): void => {
+            if (!entity) {
+                return;
+            }
+
+            entity.gender = character.gender;
+            entity.headSet = character.headSet;
+            entity.hairSet = character.hairSet;
+            entity.mouthSet = character.mouthSet;
+            entity.faceSet = character.faceSet;
+            entity.hairColor = Number(character.hairColor ?? 0);
+            entity.skinColor = Number(character.skinColor ?? 0);
+        };
+
+        applyLookFields(client.entities.get(entityId));
+
+        const levelScope = getClientLevelScope(client);
+        if (levelScope) {
+            applyLookFields(GlobalState.levelEntities.get(levelScope)?.get(entityId));
+        }
+    }
+
+    private static broadcastLookUpdate(client: Client): void {
+        if (!client.character) {
+            return;
+        }
+
+        const entityId = Number(client.clientEntID || 0);
+        if (entityId <= 0) {
+            return;
+        }
+
+        const lookUpdate = CharacterHandler.buildLookUpdatePacket(entityId, client.character).toBuffer();
+        const levelScope = getClientLevelScope(client);
+
+        client.send(0x8F, lookUpdate);
+
+        if (!levelScope) {
+            return;
+        }
+
+        for (const other of GlobalState.sessionsByToken.values()) {
+            if (other === client || !other.playerSpawned || getClientLevelScope(other) !== levelScope) {
+                continue;
+            }
+
+            other.send(0x8F, lookUpdate);
+        }
+    }
+
     static handlePaperDollRequest(client: Client, data: Buffer): void {
         const br = new BitReader(data);
         const requestedName = br.readMethod26();
@@ -254,6 +339,47 @@ export class CharacterHandler {
         }
 
         client.sendBitBuffer(0x1A, CharacterHandler.buildPaperDollPacket(character));
+    }
+
+    static async handleHomeLookChange(client: Client, data: Buffer): Promise<void> {
+        if (!client.character) {
+            return;
+        }
+
+        const character = client.character;
+        const br = new BitReader(data);
+        const headSet = br.readMethod26();
+        const hairSet = br.readMethod26();
+        const mouthSet = br.readMethod26();
+        const faceSet = br.readMethod26();
+        const gender = br.readMethod26();
+        const hairColor = br.remainingBits() >= 24 ? br.readMethod20(24) : character.hairColor;
+        const skinColor = br.remainingBits() >= 24 ? br.readMethod20(24) : character.skinColor;
+
+        character.headSet = headSet;
+        character.hairSet = hairSet;
+        character.mouthSet = mouthSet;
+        character.faceSet = faceSet;
+        character.gender = gender;
+        character.hairColor = Number(hairColor ?? 0);
+        character.skinColor = Number(skinColor ?? 0);
+
+        CharacterHandler.syncCurrentPlayerLookEntity(client);
+
+        await CharacterHandler.saveCharacterSnapshot(client);
+
+        client.sendBitBuffer(0x1A, CharacterHandler.buildPaperDollPacket(character));
+        CharacterHandler.broadcastLookUpdate(client);
+
+        DebugLogger.logProgress('CharacterLookChange:saved', client, character, {
+            headSet,
+            mouthSet,
+            hairSet,
+            faceSet,
+            gender,
+            hairColor: Number(hairColor ?? 0),
+            skinColor: Number(skinColor ?? 0)
+        });
     }
 
     static async handleLoginCharacterCreate(client: Client, data: Buffer): Promise<void> {

@@ -2807,6 +2807,7 @@ export class LevelHandler {
             : LevelConfig.isDungeonLevel(targetLevel)
                 ? LevelConfig.normalizeLevelName(syncState?.syncEntryLevel) || oldLevel
                 : oldLevel;
+        const sendExtendedOnTransfer = targetLevel === 'CraftTown';
         LevelHandler.storePendingTransferToken(
             newToken,
             activeCharacter,
@@ -2816,7 +2817,7 @@ export class LevelHandler {
             newX,
             newY,
             newHasCoord,
-            false,
+            sendExtendedOnTransfer,
             syncState
         );
         LevelHandler.rememberTransferTokenAlias(packetToken, newToken);
