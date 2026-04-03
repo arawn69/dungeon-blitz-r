@@ -5,6 +5,7 @@
     "main": "index.js",
     "scripts": {
         "dev": "cd src/server && npm run dev",
+        "multiplayer": "cd src/server && npm run multiplayer",
         "build": "cd src/server && npm run build",
         "start:multiplayer": "cd src/server && npm run start:multiplayer",
         "start:discord-bridge": "cd src/server && npm run start:discord-bridge",

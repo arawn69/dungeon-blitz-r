@@ -939,8 +939,8 @@ export class LevelHandler {
             { delayUnits: 5, entityId: oldManId, text: "Thank the stars you're here!" },
             { delayUnits: 14, entityId: oldManId, text: 'The goblins have ruined the keep.' },
             { delayUnits: 14, entityId: oldManId, text: 'I was the caretaker here...' },
-            { delayUnits: 4, entityId: bossId, text: '<Goto Red 2> Stop the human!' },
-            { delayUnits: 10, entityId: bossId, text: "Don't let him|her take our home!" }
+            { delayUnits: 4, entityId: bossId, text: '<Run Loop><Goto Red 2> Stop the human!' },
+            { delayUnits: 10, entityId: bossId, text: "<End> Don't let him|her take our home!" }
         ];
 
         for (const step of introSteps) {
@@ -1149,6 +1149,7 @@ export class LevelHandler {
             if (state.bossEntitySource === 'fallback' || stillLocked) {
                 LevelHandler.activateCraftTownTutorialBoss(client, bossId);
             }
+            LevelHandler.summonCraftTownTutorialReinforcements(client);
         }, LevelHandler.KEEP_TUTORIAL_BOSS_INTRO_TOTAL_MS);
     }
 
@@ -1298,6 +1299,57 @@ export class LevelHandler {
         }
 
         return classified;
+    }
+
+    private static mergeCraftTownTutorialHelperIds(
+        state: KeepTutorialState,
+        levelMap: Map<number, any>,
+        helperIds: number[]
+    ): void {
+        const mergedIds = Array.from(new Set([...state.helperEntityIds, ...helperIds]));
+        mergedIds.sort((leftId, rightId) => Number(levelMap.get(leftId)?.x ?? 0) - Number(levelMap.get(rightId)?.x ?? 0));
+        state.helperEntityIds = mergedIds;
+    }
+
+    private static ensureCraftTownTutorialBossEncounterEntities(client: Client): void {
+        const state = LevelHandler.getCraftTownTutorialState(client);
+        if (!state || client.currentLevel !== 'CraftTownTutorial') {
+            return;
+        }
+
+        const levelMap = LevelHandler.getCurrentLevelMap(client, true) ?? new Map<number, any>();
+        const existing = LevelHandler.classifyCraftTownTutorialFallbackEntities(levelMap);
+
+        const rawLevelMap = new Map<number, any>();
+        for (const npc of NpcLoader.getRawNpcsForLevel('CraftTownTutorial')) {
+            const entity = {
+                ...Entity.fromNpc(npc),
+                clientSpawned: false
+            };
+            rawLevelMap.set(entity.id, entity);
+        }
+
+        const rawEncounter = LevelHandler.prepareCraftTownTutorialFallbackEntities(rawLevelMap);
+
+        if (existing.bossId === null && rawEncounter.bossId !== null) {
+            const rawBoss = rawLevelMap.get(rawEncounter.bossId);
+            if (rawBoss && !levelMap.has(rawEncounter.bossId)) {
+                levelMap.set(rawEncounter.bossId, { ...rawBoss });
+            }
+        }
+
+        for (const helperId of rawEncounter.helperIds) {
+            if (levelMap.has(helperId)) {
+                continue;
+            }
+
+            const rawHelper = rawLevelMap.get(helperId);
+            if (rawHelper) {
+                levelMap.set(helperId, { ...rawHelper });
+            }
+        }
+
+        LevelHandler.mergeCraftTownTutorialHelperIds(state, levelMap, rawEncounter.helperIds);
     }
 
     private static sendNearestCraftTownTutorialParrotSkit(client: Client): void {
@@ -1633,15 +1685,12 @@ export class LevelHandler {
             return;
         }
 
-        if (client.clientSpawnConfirmed) {
-            return;
-        }
-
         const lastGuyId = LevelHandler.selectCraftTownTutorialLastGuyId(client);
         state.phase = 3;
         state.bossIntroForced = true;
         state.forcedLastGuyId = lastGuyId;
 
+        LevelHandler.ensureCraftTownTutorialBossEncounterEntities(client);
         LevelHandler.snapCraftTownTutorialParrotToPlayer(client);
 
         LevelHandler.killCraftTownTutorialLastGuy(client, lastGuyId);
@@ -1668,6 +1717,7 @@ export class LevelHandler {
             return;
         }
 
+        LevelHandler.ensureCraftTownTutorialBossEncounterEntities(client);
         const levelMap = LevelHandler.getCurrentLevelMap(client);
         if (!levelMap) {
             return;
@@ -1677,6 +1727,12 @@ export class LevelHandler {
         for (const helperId of state.helperEntityIds) {
             const helper = levelMap.get(helperId);
             if (!helper) {
+                continue;
+            }
+
+            const helperDramaAnim = String(helper.dramaAnim ?? helper.DramaAnim ?? '');
+            const alreadyActive = !Boolean(helper.untargetable) && Number(helper.entState ?? 0) !== 2 && helperDramaAnim !== 'Board';
+            if (alreadyActive) {
                 continue;
             }
 

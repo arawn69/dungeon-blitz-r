@@ -1015,15 +1015,24 @@ export class EntityHandler {
         EntityHandler.sendDestroyEntity(client, entityId);
     }
 
-    private static handleCraftTownTutorialEntitySeen(client: Client, entityId: number, entityName: string): void {
+    private static handleCraftTownTutorialEntitySeen(client: Client, entityId: number, entityName: string, entity: any = null): void {
         const state = EntityHandler.getCraftTownTutorialState(client);
         if (!state) {
             return;
         }
 
+        const dramaAnim = String(entity?.dramaAnim ?? entity?.DramaAnim ?? '');
+
         if (entityName === 'IntroParrot' && !state.introSkitSent) {
             EntityHandler.sendStartSkit(client, entityId, 0, 5);
             state.introSkitSent = true;
+        }
+
+        if (entityName === 'GoblinDagger' && dramaAnim === 'Board') {
+            if (!state.helperEntityIds.includes(entityId)) {
+                state.helperEntityIds.push(entityId);
+            }
+            return;
         }
 
         if (entityName !== 'GoblinShamanHood' && entityName !== 'IntroGoblinShamanHood') {
@@ -1234,7 +1243,7 @@ export class EntityHandler {
             client.clientSpawnConfirmed = true;
             clearClientSpawnFallbackTimer(client);
             if (client.currentLevel === 'CraftTownTutorial') {
-                EntityHandler.handleCraftTownTutorialEntitySeen(client, entityId, String(props.name ?? ''));
+                EntityHandler.handleCraftTownTutorialEntitySeen(client, entityId, String(props.name ?? ''), props);
             }
         }
 

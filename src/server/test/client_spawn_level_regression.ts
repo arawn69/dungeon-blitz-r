@@ -1,5 +1,6 @@
 import { strict as assert } from 'assert';
 import * as path from 'path';
+import { createKeepTutorialState } from '../core/Client';
 import { GlobalState } from '../core/GlobalState';
 import { LevelConfig } from '../core/LevelConfig';
 import { EntityHandler } from '../handlers/EntityHandler';
@@ -27,6 +28,9 @@ type FakeClient = {
     startedRoomEvents: Set<string>;
     knownEntityIds: Set<number>;
     entities: Map<number, any>;
+    keepTutorialState?: ReturnType<typeof createKeepTutorialState> | null;
+    clientSpawnConfirmed?: boolean;
+    clientSpawnFallbackTimer?: NodeJS.Timeout | null;
     sentPackets: SentPacket[];
     send: (id: number, payload: Buffer) => void;
     sendBitBuffer: (id: number, bb: BitBuffer) => void;
@@ -34,6 +38,7 @@ type FakeClient = {
 
 let nextFakeToken = 1000;
 const GOBLIN_RIVER_LEVELS = ['GoblinRiverDungeon', 'GoblinRiverDungeonHard'] as const;
+const CRAFT_TOWN_HELPER_IDS = [1073605, 1139141, 1335749, 1401285, 1270213, 1532357, 1597893, 1466821];
 
 
 // MOCK SETTIMEOUT FOR SYNCHRONOUS TESTS
@@ -69,6 +74,9 @@ function createFakeClient(name: string): FakeClient {
         startedRoomEvents: new Set<string>(),
         knownEntityIds: new Set<number>(),
         entities: new Map<number, any>(),
+        keepTutorialState: null,
+        clientSpawnConfirmed: false,
+        clientSpawnFallbackTimer: null,
         sentPackets,
         send(id: number, payload: Buffer) {
             sentPackets.push({ id, payload: Buffer.from(payload) });
@@ -89,6 +97,14 @@ function parseRoomEventStart(payload: Buffer): { roomId: number; flag: boolean }
     return {
         roomId: br.readMethod4(),
         flag: br.readMethod15()
+    };
+}
+
+function decodeNpcBubblePacket(payload: Buffer): { npcId: number; text: string } {
+    const br = new BitReader(payload);
+    return {
+        npcId: br.readMethod4(),
+        text: br.readMethod13()
     };
 }
 
@@ -662,6 +678,147 @@ function testCraftTownTutorialSameIdDuplicateDoesNotForceDestroyRespawn(): void 
     assert.deepEqual(follower.sentPackets, [], 'same-id duplicates should not force a destroy/respawn packet cycle');
     assert.equal(follower.knownEntityIds.has(canonical.id), true);
     assert.equal(follower.entities.has(canonical.id), false);
+}
+
+function testCraftTownTutorialTracksClientSpawnBoardHelpers(): void {
+    const client = createFakeClient('Alpha');
+    client.currentLevel = 'CraftTownTutorial';
+    client.keepTutorialState = createKeepTutorialState();
+
+    (EntityHandler as any).handleCraftTownTutorialEntitySeen(client as never, 2601, 'GoblinDagger', { dramaAnim: 'Board' });
+    (EntityHandler as any).handleCraftTownTutorialEntitySeen(client as never, 2601, 'GoblinDagger', { dramaAnim: 'Board' });
+    (EntityHandler as any).handleCraftTownTutorialEntitySeen(client as never, 2602, 'GoblinDagger', { dramaAnim: 'Board' });
+
+    assert.deepEqual(client.keepTutorialState?.helperEntityIds, [2601, 2602]);
+}
+
+function testCraftTownTutorialBossIntroUsesRunLoopThoughts(): void {
+    const client = createFakeClient('Alpha');
+    client.currentLevel = 'CraftTownTutorial';
+    client.levelInstanceId = 'keep-run';
+    client.currentRoomId = 1;
+    client.keepTutorialState = createKeepTutorialState();
+    (client as any).character = {
+        name: 'Alpha',
+        CurrentLevel: { name: 'CraftTownTutorial', x: 80, y: 1450 }
+    };
+
+    client.entities.set(2603, { id: 2603, name: 'IntroParrot', x: 0, y: 743, entState: 1, facingLeft: false });
+    client.entities.set(2604, { id: 2604, name: 'NPCHomeGemMerchant', x: 1095, y: 1447, entState: 1, facingLeft: true });
+    client.entities.set(2605, { id: 2605, name: 'IntroGoblinShamanHood', x: 49, y: 1459, entState: 2, facingLeft: false });
+
+    GlobalState.sessionsByToken.set(client.token, client as never);
+
+    (LevelHandler as any).sendCraftTownTutorialBossIntroSkit(client as never, client.keepTutorialState, 2605);
+
+    const thoughts = client.sentPackets
+        .filter((packet) => packet.id === 0x76)
+        .map((packet) => decodeNpcBubblePacket(packet.payload).text);
+
+    assert.equal(thoughts.includes('<Run Loop><Goto Red 2> Stop the human!'), true);
+    assert.equal(thoughts.includes("<End> Don't let him|her take our home!"), true);
+}
+
+function testCraftTownTutorialBossRecoveryActivatesTrackedHelpersImmediately(): void {
+    const client = createFakeClient('Alpha');
+    client.currentLevel = 'CraftTownTutorial';
+    client.levelInstanceId = 'keep-run';
+    client.currentRoomId = 1;
+    client.keepTutorialState = createKeepTutorialState();
+    client.keepTutorialState.bossEntitySeen = 2701;
+    client.keepTutorialState.helperEntityIds = [2702, 2703];
+    (client as any).character = {
+        name: 'Alpha',
+        CurrentLevel: { name: 'CraftTownTutorial', x: 80, y: 1450 }
+    };
+
+    const boss = { id: 2701, name: 'IntroGoblinShamanHood', x: 49, y: 1459, entState: 2, untargetable: true, facingLeft: false };
+    const helperOne = { id: 2702, name: 'GoblinDagger', x: 269, y: 1459, entState: 2, untargetable: true, dramaAnim: 'Board', facingLeft: false };
+    const helperTwo = { id: 2703, name: 'GoblinDagger', x: 342, y: 1459, entState: 2, untargetable: true, dramaAnim: 'Board', facingLeft: false };
+
+    client.entities.set(boss.id, boss);
+    const levelMap = new Map<number, any>([
+        [boss.id, boss],
+        [helperOne.id, helperOne],
+        [helperTwo.id, helperTwo]
+    ]);
+
+    GlobalState.sessionsByToken.set(client.token, client as never);
+    GlobalState.levelEntities.set('CraftTownTutorial#keep-run', levelMap);
+
+    (LevelHandler as any).armCraftTownTutorialBossRecovery(client as never, boss.id);
+
+    assert.equal(levelMap.get(helperOne.id)?.entState, 0);
+    assert.equal(levelMap.get(helperOne.id)?.untargetable, false);
+    assert.equal(levelMap.get(helperOne.id)?.dramaAnim, '');
+    assert.equal(levelMap.get(helperTwo.id)?.entState, 0);
+    assert.equal(levelMap.get(helperTwo.id)?.untargetable, false);
+    assert.equal(client.entities.get(boss.id)?.entState, 0);
+    assert.equal(client.entities.get(boss.id)?.untargetable, false);
+}
+
+function testCraftTownTutorialBossIntroStillTriggersAfterClientSpawnConfirmation(): void {
+    const client = createFakeClient('Alpha');
+    client.currentLevel = 'CraftTownTutorial';
+    client.levelInstanceId = 'keep-client';
+    client.currentRoomId = 1;
+    client.keepTutorialState = createKeepTutorialState();
+    client.clientSpawnConfirmed = true;
+    (client as any).character = {
+        name: 'Alpha',
+        CurrentLevel: { name: 'CraftTownTutorial', x: 80, y: 1450 }
+    };
+
+    client.entities.set(2801, { id: 2801, name: 'IntroParrot', x: 0, y: 743, entState: 1, facingLeft: false });
+    client.entities.set(2802, { id: 2802, name: 'NPCHomeGemMerchant', x: 1095, y: 1447, entState: 1, facingLeft: true });
+    client.entities.set(2803, { id: 2803, name: 'GoblinDagger', x: 960, y: 1459, entState: 0, facingLeft: false });
+
+    const levelMap = new Map<number, any>([
+        [2801, client.entities.get(2801)],
+        [2802, client.entities.get(2802)],
+        [2803, client.entities.get(2803)]
+    ]);
+
+    GlobalState.sessionsByToken.set(client.token, client as never);
+    GlobalState.levelEntities.set('CraftTownTutorial#keep-client', levelMap);
+
+    (LevelHandler as any).maybeTriggerCraftTownTutorialBossIntro(client as never);
+
+    assert.equal(client.keepTutorialState?.bossIntroForced, true);
+    assert.equal(client.keepTutorialState?.bossRecoveryArmed, true);
+    assert.equal(client.keepTutorialState?.helperEntityIds.length, CRAFT_TOWN_HELPER_IDS.length);
+    assert.equal(client.keepTutorialState?.bossEntitySeen !== null, true);
+}
+
+function testCraftTownTutorialReinforcementSeedingRestoresMissingHelpers(): void {
+    const client = createFakeClient('Alpha');
+    client.currentLevel = 'CraftTownTutorial';
+    client.levelInstanceId = 'keep-seed';
+    client.currentRoomId = 1;
+    client.keepTutorialState = createKeepTutorialState();
+    client.keepTutorialState.helperEntityIds = [CRAFT_TOWN_HELPER_IDS[0]];
+
+    const loneHelper = {
+        id: CRAFT_TOWN_HELPER_IDS[0],
+        name: 'GoblinDagger',
+        x: -1449,
+        y: 1399,
+        entState: 2,
+        untargetable: true,
+        dramaAnim: 'Board',
+        facingLeft: false
+    };
+
+    GlobalState.sessionsByToken.set(client.token, client as never);
+    GlobalState.levelEntities.set('CraftTownTutorial#keep-seed', new Map<number, any>([[loneHelper.id, loneHelper]]));
+
+    (LevelHandler as any).summonCraftTownTutorialReinforcements(client as never);
+
+    assert.deepEqual(client.keepTutorialState?.helperEntityIds, CRAFT_TOWN_HELPER_IDS);
+    for (const helperId of CRAFT_TOWN_HELPER_IDS) {
+        assert.equal(client.entities.get(helperId)?.entState, 0, `helper ${helperId} should be active`);
+        assert.equal(client.entities.get(helperId)?.untargetable, false, `helper ${helperId} should be targetable`);
+    }
 }
 
 function testSoloDungeonHostileReferencePromotesToPartyJoinerSeed(): void {
@@ -1451,6 +1608,31 @@ function main(): void {
         GlobalState.sessionsByToken.clear();
         GlobalState.partyByMember.clear();
         testCraftTownTutorialSameIdDuplicateDoesNotForceDestroyRespawn();
+
+        GlobalState.levelEntities.clear();
+        GlobalState.sessionsByToken.clear();
+        GlobalState.partyByMember.clear();
+        testCraftTownTutorialTracksClientSpawnBoardHelpers();
+
+        GlobalState.levelEntities.clear();
+        GlobalState.sessionsByToken.clear();
+        GlobalState.partyByMember.clear();
+        testCraftTownTutorialBossIntroUsesRunLoopThoughts();
+
+        GlobalState.levelEntities.clear();
+        GlobalState.sessionsByToken.clear();
+        GlobalState.partyByMember.clear();
+        testCraftTownTutorialBossRecoveryActivatesTrackedHelpersImmediately();
+
+        GlobalState.levelEntities.clear();
+        GlobalState.sessionsByToken.clear();
+        GlobalState.partyByMember.clear();
+        testCraftTownTutorialBossIntroStillTriggersAfterClientSpawnConfirmation();
+
+        GlobalState.levelEntities.clear();
+        GlobalState.sessionsByToken.clear();
+        GlobalState.partyByMember.clear();
+        testCraftTownTutorialReinforcementSeedingRestoresMissingHelpers();
 
         GlobalState.levelEntities.clear();
         GlobalState.sessionsByToken.clear();

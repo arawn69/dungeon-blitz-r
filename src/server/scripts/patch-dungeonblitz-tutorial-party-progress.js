@@ -5,8 +5,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const TARGET_SWFS = [
-    path.join('src', 'client', 'content', 'localhost', 'p', 'cbp', 'DungeonBlitz.localhost.swf'),
-    path.join('src', 'client', 'content', 'localhost', 'p', 'cbp', 'DungeonBlitz.multiplayer.swf')
+    path.join('src', 'client', 'content', 'localhost', 'p', 'cbp', 'DungeonBlitz.swf')
 ];
 
 function parseArgs(argv) {
@@ -48,9 +47,8 @@ function printHelp() {
             '  node src/server/scripts/patch-dungeonblitz-tutorial-party-progress.js [--verify] [--swf <path>] [--ffdec <path>]',
             '',
             'Defaults:',
-            '  patches both served SWFs:',
+            '  patches the served SWF:',
             `    ${TARGET_SWFS[0]}`,
-            `    ${TARGET_SWFS[1]}`,
             '  --verify exports the selected SWFs and checks that the tutorial party-progress markers are present'
         ].join('\n')
     );

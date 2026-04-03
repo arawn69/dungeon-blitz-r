@@ -4,6 +4,7 @@ import type { Server as HttpServer } from 'http';
 import * as path from 'path';
 import type { Request } from 'express';
 import { Config } from './config';
+import { buildDungeonBlitzSwfVariantBuffer } from './DungeonBlitzSwf';
 import { PresenceService } from './PresenceService';
 import { SocialHandler } from '../handlers/SocialHandler';
 
@@ -31,6 +32,7 @@ export class StaticServer {
     private port: number;
     private contentDir: string;
     private host: string;
+    private selectedSwfBuffer: Buffer | null;
     private readonly flashVersion = 'cbq';
     private readonly gameVersion = 'cbp';
 
@@ -43,6 +45,7 @@ export class StaticServer {
         this.host = host;
         this.app = express();
         this.server = null;
+        this.selectedSwfBuffer = null;
         
         // Resolve against the server root so dist and ts-node use the same content directory.
         this.contentDir = resolveContentDir(relativeContentPath);
@@ -51,8 +54,21 @@ export class StaticServer {
     }
 
     private getSelectedSwfPath(): string {
-        const swfName = Config.MULTIPLAYER_MODE ? 'DungeonBlitz.multiplayer.swf' : 'DungeonBlitz.localhost.swf';
-        return path.join(this.contentDir, 'p', 'cbp', swfName);
+        return path.join(this.contentDir, 'p', 'cbp', 'DungeonBlitz.swf');
+    }
+
+    private getSelectedSwfBuffer(): Buffer {
+        if (this.selectedSwfBuffer) {
+            return this.selectedSwfBuffer;
+        }
+
+        const mode = Config.MULTIPLAYER_MODE ? 'multiplayer' : 'local';
+        this.selectedSwfBuffer = buildDungeonBlitzSwfVariantBuffer(
+            this.getSelectedSwfPath(),
+            mode
+        );
+        console.log(`[StaticServer] Prepared DungeonBlitz.swf variant for ${mode} mode.`);
+        return this.selectedSwfBuffer;
     }
 
     private getSelectedSwfUrl(): string {
@@ -137,12 +153,12 @@ export class StaticServer {
 
         this.app.get('/p/cbp/DungeonBlitz.swf', (_req, res) => {
             res.type('application/x-shockwave-flash');
-            res.sendFile(this.getSelectedSwfPath());
+            res.send(this.getSelectedSwfBuffer());
         });
 
         this.app.get('/DungeonBlitzRemote.swf', (_req, res) => {
             res.type('application/x-shockwave-flash');
-            res.sendFile(this.getSelectedSwfPath());
+            res.send(this.getSelectedSwfBuffer());
         });
 
         this.app.get('/p/cbq/devSettings.xml', (_req, res) => {

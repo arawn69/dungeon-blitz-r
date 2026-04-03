@@ -5,8 +5,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const TARGET_SWFS = [
-    path.join('src', 'client', 'content', 'localhost', 'p', 'cbp', 'DungeonBlitz.localhost.swf'),
-    path.join('src', 'client', 'content', 'localhost', 'p', 'cbp', 'DungeonBlitz.multiplayer.swf')
+    path.join('src', 'client', 'content', 'localhost', 'p', 'cbp', 'DungeonBlitz.swf')
 ];
 
 function parseArgs(argv) {
@@ -48,7 +47,7 @@ function printHelp() {
             '  node src/server/scripts/patch-dungeonblitz-quest-ui.js [--verify] [--swf <path>] [--ffdec <path>]',
             '',
             'Defaults:',
-            '  patches LinkUpdater in both served DungeonBlitz SWFs',
+            '  patches LinkUpdater in the served DungeonBlitz SWF',
             '  so quest popups and tutorial highlighters follow the intended story flow.'
         ].join('\n')
     );

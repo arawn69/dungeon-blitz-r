@@ -5,8 +5,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const TARGETS = [
-    path.join('src', 'client', 'content', 'localhost', 'p', 'cbp', 'DungeonBlitz.localhost.swf'),
-    path.join('src', 'client', 'content', 'localhost', 'p', 'cbp', 'DungeonBlitz.multiplayer.swf')
+    path.join('src', 'client', 'content', 'localhost', 'p', 'cbp', 'DungeonBlitz.swf')
 ];
 
 const EARLY_ZONE_METHOD = 'method_6901';
@@ -51,7 +50,7 @@ function printHelp() {
             '  node src/server/scripts/patch-dungeonblitz-story-zone-locks.js [--verify] [--swf <path>] [--ffdec <path>]',
             '',
             'Defaults:',
-            '  patches both served DungeonBlitz SWFs so the map only shows story-zone quest markers',
+            '  patches the served DungeonBlitz SWF so the map only shows story-zone quest markers',
             '  after those zones are actually unlocked by the player story flow.'
         ].join('\n')
     );

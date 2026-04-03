@@ -39,7 +39,7 @@ function resolveSwfPath(args: string[]): string {
   if (idx !== -1 && idx + 1 < args.length) {
     return path.resolve(args[idx + 1]);
   }
-  return path.resolve(__dirname, "..", "..", "client", "content", "localhost", "p", "cbp", "DungeonBlitz.localhost.swf");
+  return path.resolve(__dirname, "..", "..", "client", "content", "localhost", "p", "cbp", "DungeonBlitz.swf");
 }
 
 function hasFlag(args: string[], flag: string): boolean {

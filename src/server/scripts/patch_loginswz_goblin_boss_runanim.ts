@@ -2,8 +2,12 @@ import * as path from "path";
 import { defaultLoginSwzPath, ensureBackup, parseSwz, SwzPatchError, writeSwz } from "./swzPatchUtils";
 
 const RUN_ANIM_TAG = "\t\t\t<RunAnim>Run</RunAnim>\r\n";
-const MOVE_SPEED_TAG = "\t\t\t<MoveAnimSpeed>0.75</MoveAnimSpeed>\r\n";
-const TARGETS = ["GoblinBoss2", "GoblinBoss2Hard"];
+const TARGETS = [
+  "GoblinBoss2",
+  "GoblinBoss2Hard",
+  "IntroGoblinShamanHood",
+  "GoblinShamanHood",
+];
 
 function resolveSwzPath(args: string[]): string {
   const idx = args.indexOf("--swz-path");
@@ -52,12 +56,12 @@ function patchEntTypeBlock(xml: string, entName: string): { xml: string; changed
     throw new SwzPatchError(`${entName} already has a non-Run RunAnim override`);
   }
 
-  const moveSpeedIndex = gfxBlock.indexOf(MOVE_SPEED_TAG);
-  if (moveSpeedIndex === -1) {
+  const moveSpeedMatch = gfxBlock.match(/(\t\t\t<MoveAnimSpeed>[^<]+<\/MoveAnimSpeed>\r?\n)/);
+  if (!moveSpeedMatch || typeof moveSpeedMatch.index !== "number") {
     throw new SwzPatchError(`${entName} MoveAnimSpeed tag not found`);
   }
 
-  const insertAt = start + gfxStart + moveSpeedIndex + MOVE_SPEED_TAG.length;
+  const insertAt = start + gfxStart + moveSpeedMatch.index + moveSpeedMatch[0].length;
   const updatedXml = `${xml.slice(0, insertAt)}${RUN_ANIM_TAG}${xml.slice(insertAt)}`;
   return { xml: updatedXml, changed: true };
 }

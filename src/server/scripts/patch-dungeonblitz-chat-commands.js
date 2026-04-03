@@ -6,11 +6,7 @@ const { execFileSync } = require('child_process');
 
 const TARGETS = [
     {
-        swf: path.join('src', 'client', 'content', 'localhost', 'p', 'cbp', 'DungeonBlitz.localhost.swf'),
-        scriptsDir: path.join('src', 'client', 'ffdec-patches', 'DungeonBlitz.localhost', 'scripts')
-    },
-    {
-        swf: path.join('src', 'client', 'content', 'localhost', 'p', 'cbp', 'DungeonBlitz.multiplayer.swf'),
+        swf: path.join('src', 'client', 'content', 'localhost', 'p', 'cbp', 'DungeonBlitz.swf'),
         scriptsDir: path.join('src', 'client', 'ffdec-patches', 'DungeonBlitz.multiplayer', 'scripts')
     }
 ];
@@ -54,7 +50,7 @@ function printHelp() {
             '  node src/server/scripts/patch-dungeonblitz-chat-commands.js [--verify] [--swf <path>] [--ffdec <path>]',
             '',
             'Defaults:',
-            '  imports the extracted ActionScript patches for class_127 into both served DungeonBlitz SWFs',
+            '  imports the extracted ActionScript patches for class_127 into the served DungeonBlitz SWF',
             '  so /lang:tr and /lang:en pass through the client slash-command parser to the server.'
         ].join('\n')
     );
