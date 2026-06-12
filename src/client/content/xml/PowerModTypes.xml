@@ -3436,7 +3436,7 @@
 		<ModName>RuneIceSpike</ModName>
 		<ModID>357</ModID>
 		<DisplayName>Ice Lance</DisplayName>
-		<Description>Increase Defense during Ice Lance</Description>
+		<Description>Gain +50% Defense for 1 second during Ice Lance</Description>
 		<ModType>Power</ModType>
 		<PowerName>IceSpike</PowerName>
 		<PowerProperty>AddSelfBuff</PowerProperty>
