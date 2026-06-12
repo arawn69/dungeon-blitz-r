@@ -468,6 +468,7 @@
     {
         "MissionName": "SlayMindlessQueen",
         "MissionID": "24",
+        "PreReqMissions": "StopBroodvictor",
         "ZoneSet": "SwampRoadNorth",
         "Priority": "Dungeon",
         "ContactName": "Odem",
@@ -2630,6 +2631,7 @@
     {
         "MissionName": "SlayMindlessQueenHard",
         "MissionID": "134",
+        "PreReqMissions": "StopBroodvictorHard",
         "ZoneSet": "SwampRoadNorthHard",
         "Priority": "Dungeon",
         "ContactName": "OdemHard",
